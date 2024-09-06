@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <fstream>  // For file handling
 using namespace std;
 
 class Product {
@@ -16,12 +17,30 @@ public:
         : name(n), sku(s), stock(st), cost(c), costPrice(cp), unitsSold(0) {}
 
     double calculateProfitability() const {
-        // Adjusted profitability considering sales, remaining stock, and cost price
         return (stock * cost);
     }
 
     double calculateRevenue() const {
         return unitsSold * costPrice;
+    }
+
+    // Save product data to a file
+    void saveProduct(ofstream& file) const {
+        file << name << "," << sku << "," << stock << "," << cost << "," << costPrice << "," << unitsSold << "\n";
+    }
+
+    // Load product data from a file
+    static Product loadProduct(ifstream& file) {
+        string name;
+        int sku, stock, unitsSold;
+        double cost, costPrice;
+        char comma;
+
+        getline(file, name, ',');
+        file >> sku >> comma >> stock >> comma >> cost >> comma >> costPrice >> comma >> unitsSold;
+        file.ignore();  // To skip the newline character
+
+        return Product(name, sku, stock, cost, costPrice);
     }
 };
 
@@ -31,6 +50,22 @@ public:
     int quantity;
 
     Transaction(int s, int q) : sku(s), quantity(q) {}
+
+    // Save transaction data to a file
+    void saveTransaction(ofstream& file) const {
+        file << sku << "," << quantity << "\n";
+    }
+
+    // Load transaction data from a file
+    static Transaction loadTransaction(ifstream& file) {
+        int sku, quantity;
+        char comma;
+
+        file >> sku >> comma >> quantity;
+        file.ignore();  // To skip the newline character
+
+        return Transaction(sku, quantity);
+    }
 };
 
 class TreeNode {
@@ -45,7 +80,9 @@ public:
 class InventoryManagementSystem {
 private:
     TreeNode* root;
-     vector<Transaction> transactionHistory;  // Transaction log
+    vector<Transaction> transactionHistory;  // Transaction log
+    const string productFile = "products.txt";
+    const string transactionFile = "transactions.txt";
 
     // Helper function to insert a product into the BST
     TreeNode* insertProduct(TreeNode* node, const Product& product) {
@@ -61,6 +98,8 @@ private:
 
         return node;
     }
+
+   
 
     // Helper function to display products in sorted order (in-order traversal)
     void displayProducts(TreeNode* node) const {
@@ -82,16 +121,12 @@ private:
     void updateStock(TreeNode* node, int sku, int quantity) {
         if (node != nullptr) {
             if (sku == node->product.sku) {
-                // Update stock for the found product
-                // Check for stock underflow
                 if (quantity < 0 && node->product.stock + quantity < 0) {
                     cout << "Error: Stock underflow. Cannot decrease stock below 0.\n";
                 } else {
-                    // Update stock
-                    node->product.stock += quantity;  // Add stock for all quantities
+                    node->product.stock += quantity;
                     transactionHistory.emplace_back(sku, quantity);  // Log the transaction
 
-                    // Check if stock is below 50 and display an alert
                     if (node->product.stock < 30) {
                         cout << "Alert: Stock for " << node->product.name
                                   << " is below 30. Current stock: " << node->product.stock << "\n";
@@ -100,19 +135,15 @@ private:
                     cout << "Stock updated successfully.\n";
                 }
             } else if (sku < node->product.sku) {
-                // Search in the left subtree
                 updateStock(node->left, sku, quantity);
             } else {
-                // Search in the right subtree
                 updateStock(node->right, sku, quantity);
             }
         } else {
-            // Product with the specified SKU not found
             cout << "Product with SKU " << sku << " not found.\n";
         }
     }
 
-    // Helper function to recommend stock adjustments based on revenue and sales
     void recommendStockAdjustments(TreeNode* node) const {
         if (node != nullptr) {
             recommendStockAdjustments(node->left);
@@ -141,17 +172,16 @@ private:
 public:
     InventoryManagementSystem() : root(nullptr) {}
 
-    // Function to pre-add some products
-    void preAddProducts() {
-        // Add pre-defined products to the inventory
-        addProduct(Product("Laptop", 1001, 50, 800.0, 700.0));
-        addProduct(Product("Smartphone", 1002, 30, 400.0, 350.0));
-        addProduct(Product("Tablet", 1003, 20, 300.0, 250.0));
-    }
-
     void addProduct(const Product& product) {
         root = insertProduct(root, product);
     }
+
+    void preAddProducts() {
+    addProduct(Product("SmartPhone", 1001, 100, 150.00, 180.00));
+    addProduct(Product("Keyboard", 1002, 200, 250.00, 290.00));
+    addProduct(Product("Mouse", 1003, 100, 250.00, 190.00));
+
+}
 
     void displayProducts() const {
         cout << "Product List (Sorted by SKU):\n";
@@ -160,7 +190,6 @@ public:
     }
 
     void updateStock(int sku, int quantity) {
-        // Start the stock update from the root of the BST
         updateStock(root, sku, quantity);
     }
 
@@ -170,22 +199,85 @@ public:
         cout << "-----------------\n";
     }
 
-    // Function to record sales for each product
     void recordSales() {
         cout << "Recording Sales for Each Product:\n";
-
         recordSalesForProduct(root);
-
         cout << "Sales recorded successfully.\n";
     }
 
-    // Function to get transaction history
     const vector<Transaction>& getTransactionHistory() const {
         return transactionHistory;
     }
 
+    // Function to save all products to a file
+    void saveProducts() const {
+        ofstream file(productFile);
+        if (!file) {
+            cout << "Error: Could not open file for saving products.\n";
+            return;
+        }
+
+        saveProductsToFile(root, file);
+        file.close();
+    }
+
+    // Helper function to save products to file (in-order traversal)
+    void saveProductsToFile(TreeNode* node, ofstream& file) const {
+        if (node != nullptr) {
+            saveProductsToFile(node->left, file);
+            node->product.saveProduct(file);
+            saveProductsToFile(node->right, file);
+        }
+    }
+
+    // Function to load products from a file
+    void loadProducts() {
+        ifstream file(productFile);
+        if (!file) {
+            cout << "Error: Could not open file for loading products.\n";
+            return;
+        }
+
+        while (file.peek() != EOF) {
+            Product product = Product::loadProduct(file);
+            addProduct(product);
+        }
+
+        file.close();
+    }
+
+    // Function to save transaction history to a file
+    void saveTransactions() const {
+        ofstream file(transactionFile);
+        if (!file) {
+            cout << "Error: Could not open file for saving transactions.\n";
+            return;
+        }
+
+        for (const auto& transaction : transactionHistory) {
+            transaction.saveTransaction(file);
+        }
+
+        file.close();
+    }
+
+    // Function to load transaction history from a file
+    void loadTransactions() {
+        ifstream file(transactionFile);
+        if (!file) {
+            cout << "Error: Could not open file for loading transactions.\n";
+            return;
+        }
+
+        while (file.peek() != EOF) {
+            Transaction transaction = Transaction::loadTransaction(file);
+            transactionHistory.push_back(transaction);
+        }
+
+        file.close();
+    }
+
 private:
-    // Helper function to record sales for each product (in-order traversal)
     void recordSalesForProduct(TreeNode* node) {
         if (node != nullptr) {
             recordSalesForProduct(node->left);
@@ -195,11 +287,9 @@ private:
                       << " (SKU: " << node->product.sku << "): ";
             cin >> unitsSold;
 
-            // Check if units sold exceed available stock and display an alert
             if (unitsSold > node->product.stock) {
                 cout << "Error: Units sold cannot exceed available stock.\n";
             } else {
-                // Update units sold for the product
                 node->product.unitsSold += unitsSold;
                 updateStock(node, node->product.sku, -unitsSold);
             }
@@ -211,8 +301,12 @@ private:
 
 int main() {
     InventoryManagementSystem ims;
-    cout<<"            SMART INVENTORY SYSTEM              !"<<endl;
-    // Pre-add some products to the inventory
+    cout << "            SMART INVENTORY SYSTEM              !\n";
+
+    // Load products and transactions from files
+    ims.loadProducts();
+    ims.loadTransactions();
+
     ims.preAddProducts();
 
     while (true) {
@@ -222,7 +316,7 @@ int main() {
         cout << "4. Recommend Stock Adjustments\n";
         cout << "5. Record Sales\n";
         cout << "6. View Transaction History\n";
-        cout << "7. Exit\n";
+        cout << "7. Save and Exit\n";
         cout << "Enter your choice: ";
 
         int choice;
@@ -284,7 +378,9 @@ int main() {
                 break;
             }
             case 7:
-                cout << "Exiting program.\n";
+                ims.saveProducts();
+                ims.saveTransactions();
+                cout << "Exiting and saving data.\n";
                 return 0;
             default:
                 cout << "Invalid choice. Try again.\n";
